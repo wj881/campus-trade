@@ -1,0 +1,140 @@
+// =============================================================================
+// Prisma 数据模型 —— 校园闲置交易平台后端
+// 对应上级目录 schema.sql；主键使用 Int 自增（学生项目数据量足够，JSON 序列化无 BigInt 坑）。
+// 若严格沿用 schema.sql 的 BIGINT 主键，可将各模型 id 改为 BigInt @id @default(autoincrement())。
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// 用户表：role 1=学生(C端) 2=管理员(B端)；status 1=正常 0=封禁
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique @db.VarChar(50)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  nickname     String    @default("") @db.VarChar(50)
+  phone        String?   @unique @db.VarChar(20)
+  avatar       String?   @db.VarChar(255)
+  school       String?   @db.VarChar(100)
+  college      String?   @db.VarChar(100)
+  gender       Int       @default(0)
+  role         Int       @default(1)
+  status       Int       @default(1)
+  bio          String?   @db.VarChar(255)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  products Product[]
+  favorites Favorite[]
+  buyerOrders  Order[] @relation("Buyer")
+  sellerOrders Order[] @relation("Seller")
+
+  @@map("user")
+}
+
+/// 分类表：parentId=0 为一级分类；status 1=启用 0=禁用
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(50)
+  parentId  Int      @default(0) @map("parent_id")
+  icon      String?  @db.VarChar(255)
+  sort      Int      @default(0)
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("category")
+}
+
+/// 商品表：status 1=待审核 2=在售 3=已售出 4=已下架 5=审核驳回
+model Product {
+  id             Int      @id @default(autoincrement())
+  sellerId       Int      @map("seller_id")
+  categoryId     Int      @map("category_id")
+  title          String   @db.VarChar(100)
+  description    String?  @db.Text
+  price          Decimal  @db.Decimal(10, 2)
+  originalPrice  Decimal? @map("original_price") @db.Decimal(10, 2)
+  conditionLevel Int      @default(3) @map("condition_level")
+  status         Int      @default(1)
+  auditRemark    String?  @map("audit_remark") @db.VarChar(255)
+  viewCount      Int      @default(0) @map("view_count")
+  location       String?  @db.VarChar(100)
+  contact        String?  @db.VarChar(100)
+  isTop          Int      @default(0) @map("is_top")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  seller   User     @relation(fields: [sellerId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  favoritedBy Favorite[]
+  images ProductImage[]
+  orders Order[]
+
+  @@map("product")
+}
+
+/// 商品图片表：一商品多图，sort 越小越靠前（0 为首图）
+model ProductImage {
+  id         Int      @id @default(autoincrement())
+  productId  Int      @map("product_id")
+  url        String   @db.VarChar(255)
+  sort       Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_image")
+}
+
+/// 收藏表：用户与商品多对多关系，唯一索引防止重复收藏
+model Favorite {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  productId  Int      @map("product_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@map("favorite")
+}
+
+/// 订单表：status 1待确认 2待付款 3待交付 4待收货 5已完成 6已取消 7退款申诉中
+model Order {
+  id            Int      @id @default(autoincrement())
+  orderNo       String   @unique @db.VarChar(32)
+  productId     Int      @map("product_id")
+  buyerId       Int      @map("buyer_id")
+  sellerId      Int      @map("seller_id")
+  productTitle  String   @map("product_title") @db.VarChar(100)
+  productImage  String?  @map("product_image") @db.VarChar(255)
+  price         Decimal  @db.Decimal(10, 2)
+  quantity      Int      @default(1)
+  totalAmount   Decimal  @map("total_amount") @db.Decimal(10, 2)
+  status        Int      @default(1)
+  tradeLocation String?  @map("trade_location") @db.VarChar(100)
+  remark        String?  @db.VarChar(255)
+  paymentMethod Int      @default(1) @map("payment_method")
+  cancelReason  String?  @map("cancel_reason") @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  buyer   User    @relation("Buyer", fields: [buyerId], references: [id])
+  seller  User    @relation("Seller", fields: [sellerId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("orders")
+}
